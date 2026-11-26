@@ -424,7 +424,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   position: relative;
   z-index: 3;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
   margin-top: 74px;
   padding: 30px 0 34px;
   border-top: 1px solid var(--line);
@@ -447,9 +447,9 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   letter-spacing: -0.02em;
   margin: 6px 0 8px;
   line-height: 1.1;
+  white-space: nowrap;
 }
 .stats dd small { font-size: 13px; color: var(--muted); font-weight: 500; margin-left: 2px; }
-.stats dd.dd-sm { font-size: 23px; letter-spacing: -0.015em; }
 .stats p { font-size: 12px; color: var(--muted-2); }
 
 /* ---------- Sections ---------- */
