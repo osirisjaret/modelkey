@@ -1,0 +1,86 @@
+name: Sync APK release info
+
+# 只在 apk/*.apk 变更时触发；本工作流自己改的是 release.json 与旧包删除，
+# 配合下面的 github.actor 守卫，避免自触发死循环。
+on:
+  push:
+    paths:
+      - "apk/*.apk"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-release
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 规范化 apk 并生成 release.json
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, re, subprocess, datetime
+
+          D = "apk"
+          files = sorted(f for f in os.listdir(D) if f.lower().endswith(".apk"))
+          if not files:
+              print("apk 目录下没有 .apk，跳过")
+              raise SystemExit(0)
+
+          def ver(name):
+              m = re.search(r"[vV]?(\d+(?:\.\d+)+)", name)
+              return m.group(1) if m else None
+
+          versioned = [(ver(f), f) for f in files]
+          versioned = [(v, f) for v, f in versioned if v]
+
+          if versioned:
+              keep = max(versioned, key=lambda p: tuple(int(x) for x in p[0].split(".")))[1]
+          else:
+              def ctime(f):
+                  out = subprocess.check_output(
+                      ["git", "log", "-1", "--format=%ct", "--", os.path.join(D, f)]
+                  ).strip()
+                  return int(out or 0)
+              keep = max(files, key=ctime)
+
+          for f in files:
+              if f != keep:
+                  os.remove(os.path.join(D, f))
+                  print("删除旧包:", f)
+
+          p = os.path.join(D, keep)
+          raw = open(p, "rb").read()
+          data = {
+              "latest": {
+                  "version": ver(keep) or "最新版",
+                  "file": keep,
+                  "sizeBytes": len(raw),
+                  "sha256": hashlib.sha256(raw).hexdigest(),
+                  "platform": "Android 8.1+ / WearOS",
+                  "updatedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              }
+          }
+          with open(os.path.join(D, "release.json"), "w", encoding="utf-8") as fh:
+              fh.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+          print(json.dumps(data, ensure_ascii=False, indent=2))
+          PY
+
+      - name: 提交变更
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A apk
+          if git diff --cached --quiet; then
+            echo "无变更，跳过提交"
+          else
+            git commit -m "chore(apk): 自动更新 release.json"
+            git push
+          fi
