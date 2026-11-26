@@ -23,33 +23,58 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 规范化 apk 并生成 release.json
+      - name: 以本次推送的 apk 为准，清理旧包并生成 release.json
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
         run: |
           python3 - <<'PY'
           import hashlib, json, os, re, subprocess, datetime
 
           D = "apk"
+          before = os.environ.get("BEFORE", "")
+          after = os.environ.get("AFTER", "")
+
+          def git(*args):
+              try:
+                  return subprocess.check_output(["git", *args], stderr=subprocess.DEVNULL).decode().strip()
+              except subprocess.CalledProcessError:
+                  return ""
+
+          # 1) 从本次 push 的变更列表里找出新增/修改/重命名的 apk
+          pushed = []
+          if before and after and set(before) != {"0"}:
+              for line in git("diff", "--name-status", before, after, "--", D).splitlines():
+                  parts = line.split("\t")
+                  if len(parts) < 2:
+                      continue
+                  status, path = parts[0][0], parts[-1]
+                  if path.lower().endswith(".apk") and status in ("A", "M", "R", "C"):
+                      pushed.append(os.path.basename(path))
+
           files = sorted(f for f in os.listdir(D) if f.lower().endswith(".apk"))
           if not files:
-              print("apk 目录下没有 .apk，跳过")
+              print("apk 目录下已没有 .apk，跳过（不写 release.json）")
               raise SystemExit(0)
 
           def ver(name):
               m = re.search(r"[vV]?(\d+(?:\.\d+)+)", name)
               return m.group(1) if m else None
 
-          versioned = [(ver(f), f) for f in files]
-          versioned = [(v, f) for v, f in versioned if v]
+          def rank(name):
+              v = ver(name)
+              return (1, tuple(int(x) for x in v.split(".")), name) if v else (0, (), name)
 
-          if versioned:
-              keep = max(versioned, key=lambda p: tuple(int(x) for x in p[0].split(".")))[1]
+          # 2) 以本次推送带进来的包为准（多个取版本最高）；只有删除时回退到剩余文件
+          candidates = [f for f in pushed if f in files]
+          if candidates:
+              mode = "本次推送"
+              pool = candidates
           else:
-              def ctime(f):
-                  out = subprocess.check_output(
-                      ["git", "log", "-1", "--format=%ct", "--", os.path.join(D, f)]
-                  ).strip()
-                  return int(out or 0)
-              keep = max(files, key=ctime)
+              mode = "本次无新增（按剩余文件重新生成）"
+              pool = files
+          keep = max(pool, key=rank)
+          print(f"判定依据：{mode}；候选={pool}；保留={keep}")
 
           for f in files:
               if f != keep:
@@ -62,7 +87,6 @@ jobs:
               "latest": {
                   "version": ver(keep) or "最新版",
                   "file": keep,
-                  # 兼容旧版页面（只认 fileName 字段）
                   "fileName": keep,
                   "sizeBytes": len(raw),
                   "sha256": hashlib.sha256(raw).hexdigest(),
@@ -83,6 +107,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "无变更，跳过提交"
           else
-            git commit -m "chore(apk): 自动更新 release.json"
+            git commit -m "chore(apk): 以本次推送的 apk 为准更新 release.json"
             git push
           fi
