@@ -387,11 +387,12 @@
   function renderRelease(data) {
     var latest = data && data.latest ? data.latest : null;
     if (!latest) return;
-    setAll("version", "v" + latest.version);
+    setAll("version", /^[vV]?\d/.test(latest.version) ? "v" + String(latest.version).replace(/^[vV]/, "") : latest.version);
     setAll("date", latest.releaseDate);
     setAll("size", formatSize(latest.sizeBytes));
     setAll("platform", latest.platform || "Android 8.1+ / WearOS");
-    if (latest.fileName) downloadLinks(latest.fileName);
+    var file = latest.file || latest.fileName;
+    if (file) downloadLinks(file);
   }
 
   if (window.fetch) {
