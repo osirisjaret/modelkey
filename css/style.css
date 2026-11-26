@@ -445,7 +445,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   font-size: 32px;
   font-weight: 600;
   letter-spacing: -0.02em;
-  margin: 6px 0 2px;
+  margin: 6px 0 8px;
   line-height: 1.1;
 }
 .stats dd small { font-size: 13px; color: var(--muted); font-weight: 500; margin-left: 2px; }
